@@ -201,12 +201,17 @@ def convert_to_tensors(text_indices: "list[list[int]]") -> torch.Tensor:
     lengths = []
     for seq in text_indices:
         lengths.append(len(seq))
-    L = max(lengths) if N > 0 else 0
+
+    if N > 0:
+        L = max(lengths)
+    else:
+        L = 0
 
     tens = torch.zeros((N, L), dtype=torch.int32)
     for r, seq in enumerate(text_indices):
         if seq:
-            tens[r, :len(seq)] = torch.tensor(seq, dtype=torch.int32)
+            row_tensor = torch.tensor(seq, dtype=torch.int32)
+            tens[r, :len(seq)] = row_tensor
 
     return tens
 
