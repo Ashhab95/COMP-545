@@ -165,19 +165,50 @@ def tokens_to_ix(
 def build_loader(
     data_dict: dict, batch_size: int = 64, shuffle: bool = False
 ) -> Callable[[], Iterable[dict]]:
-    # TODO: Your code here
-
+    first_key = list(data_dict.keys())[0]
+    n = len(data_dict[first_key])  
+    for k, v in data_dict.items():
+        assert len(v) == n, f"Length of all the keys are not equal"
+    if batch_size < 1:
+        raise ValueError(f"batch_size must be >= 1")
+    
     def loader():
-        # TODO: Your code here
-        pass
+        idx = list(range(n))
+        if shuffle:
+            random.shuffle(idx)
+
+        for i in range(0, n, batch_size):
+            batch_idx = idx[i:min(i + batch_size, n)]
+
+            batch = {}
+            for key in data_dict.keys():
+                values = data_dict[key]
+                batch_values = []
+                for j in batch_idx:
+                    batch_values.append(values[j])
+                batch[key] = batch_values
+            yield batch
 
     return loader
 
 
 ### 1.2 Converting a batch into inputs
 def convert_to_tensors(text_indices: "list[list[int]]") -> torch.Tensor:
-    # TODO: Your code here
-    pass
+    if not text_indices:
+        return torch.zeros((0, 0), dtype=torch.int32)
+
+    N = len(text_indices)
+    lengths = []
+    for seq in text_indices:
+        lengths.append(len(seq))
+    L = max(lengths) if N > 0 else 0
+
+    tens = torch.zeros((N, L), dtype=torch.int32)
+    for r, seq in enumerate(text_indices):
+        if seq:
+            tens[r, :len(seq)] = torch.tensor(seq, dtype=torch.int32)
+
+    return tens
 
 
 ### 2.1 Design a logistic model with embedding and pooling
