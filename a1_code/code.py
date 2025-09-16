@@ -1,3 +1,7 @@
+# LING 545
+# Kazi Ashhab Rahman, 261086477
+# Nusaibah Binte Rawnak, 261090557
+
 from typing import Union, Iterable, Callable
 import random
 
@@ -219,14 +223,18 @@ def convert_to_tensors(text_indices: "list[list[int]]") -> torch.Tensor:
 ### 2.1 Design a logistic model with embedding and pooling
 def max_pool(x: torch.Tensor) -> torch.Tensor:
     # TODO: Your code here
-    pass
+    values, _ = torch.max(x, dim=1)
+    return values
 
 
 class PooledLogisticRegression(nn.Module):
     def __init__(self, embedding: nn.Embedding):
         super().__init__()
-
         # TODO: Your code here
+        self.embedding = embedding
+        E = embedding.embedding_dim #the embedding dimension
+        self.layer_pred = nn.Linear(2 * E, 1)
+        self.sigmoid = nn.Sigmoid()
 
     # DO NOT CHANGE THE SECTION BELOW! ###########################
     # # This is to force you to initialize certain things in __init__
@@ -247,44 +255,107 @@ class PooledLogisticRegression(nn.Module):
         sigmoid = self.get_sigmoid()
 
         # TODO: Your code here
+        premise = premise.long()
+        hypothesis = hypothesis.long()
+
+        #get the embedding
+        embed_prem = emb(premise)     
+        embed_hyp  = emb(hypothesis)
+
+        #max pool    
+        vector_prem = max_pool(embed_prem)   
+        vector_hyp  = max_pool(embed_hyp) 
+        
+        #concatenate   
+        concat = torch.cat([vector_prem, vector_hyp], dim=1)
+
+        logits = layer_pred(concat)   #get the logits
+        probs = sigmoid(logits)  #turn them into probs
+        return probs.squeeze(-1) #squeeze the last dim so that i only get N instead of (N,1)
+
+
+
 
 
 ### 2.2 Choose an optimizer and a loss function
 def assign_optimizer(model: nn.Module, **kwargs) -> torch.optim.Optimizer:
     # TODO: Your code here
-    pass
+    optimizer = torch.optim.SGD(model.parameters(), **kwargs)
+    return optimizer
 
 
 def bce_loss(y: torch.Tensor, y_pred: torch.Tensor) -> torch.Tensor:
     # TODO: Your code here
-    pass
+
+    loss = - (y * torch.log(y_pred + 1e-8) + (1 - y) * torch.log(1 - y_pred + 1e-8))
+    return loss.mean()
 
 
 ### 2.3 Forward and backward pass
 def forward_pass(model: nn.Module, batch: dict, device="cpu"):
     # TODO: Your code here
-    pass
+    premise_ids = convert_to_tensors(batch["premise"]).long()
+    hypothesis_ids = convert_to_tensors(batch["hypothesis"]).long()
+
+    model.train()  
+    y_pred = model(premise_ids, hypothesis_ids)  
+    return y_pred
 
 
 def backward_pass(
     optimizer: torch.optim.Optimizer, y: torch.Tensor, y_pred: torch.Tensor
 ) -> torch.Tensor:
     # TODO: Your code here
-    pass
+    y = y.float()
+    loss = bce_loss(y, y_pred)
+    
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    return loss
 
 
 ### 2.4 Evaluation
 def f1_score(y: torch.Tensor, y_pred: torch.Tensor, threshold=0.5) -> torch.Tensor:
     # TODO: Your code here
-    pass
+    y_pred_binary = y_pred.int()
+
+    y = y.int()
+
+    tp = ((y_pred_binary == 1) & (y == 1)).sum().float() #true positive
+    fp = ((y_pred_binary == 1) & (y == 0)).sum().float() #false positive
+    fn = ((y_pred_binary == 0) & (y == 1)).sum().float() #false negative
+
+    precision = tp / (tp + fp + 1e-8)
+    recall = tp / (tp + fn + 1e-8)
+
+    f1 = 2 * precision * recall / (precision + recall + 1e-8)
+    return f1.unsqueeze(0) 
 
 
 ### 2.5 Train loop
 def eval_run(
     model: nn.Module, loader: Callable[[], Iterable[dict]], device: str = "cpu"
 ):
-    # TODO: Your code here
-    pass
+    model.eval()
+    true = []
+    pred = []
+    with torch.no_grad():
+        for batch in loader():
+            premise_ids = convert_to_tensors(batch["premise"]).long()
+            hypothesis_ids = convert_to_tensors(batch["hypothesis"]).long()
+            
+            # forward 
+            y_pred = model(premise_ids, hypothesis_ids)         
+            y_true = torch.tensor(batch["label"], dtype=torch.float32) 
+
+            pred.append(y_pred.float())
+            true.append(y_true)
+
+    # concatenate batches to flat tensors
+    y_pred_all = torch.cat(pred, dim=0) if pred else torch.empty(0, dtype=torch.float32)
+    y_true_all = torch.cat(true, dim=0) if true else torch.empty(0, dtype=torch.float32)
+    return y_true_all, y_pred_all
 
 
 def train_loop(
@@ -296,7 +367,21 @@ def train_loop(
     device: str = "cpu",
 ):
     # TODO: Your code here
-    pass
+    val_f1 = []
+    for _ in range(n_epochs):
+        for batch in train_loader():
+            # forward 
+            y_pred = forward_pass(model, batch)          
+            y_true = torch.tensor(batch["label"], dtype=torch.float32)  
+
+            # backward 
+            loss = backward_pass(optimizer, y_true, y_pred)
+
+        y_true_val, y_pred_val = eval_run(model, valid_loader)
+        f1 = f1_score(y_true_val, y_pred_val, threshold=0.5)  
+        val_f1.append(float(f1.item()))
+
+    return val_f1
 
 
 ### 3.1
