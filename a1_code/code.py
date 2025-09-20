@@ -390,6 +390,12 @@ class ShallowNeuralNetwork(nn.Module):
         super().__init__()
 
         # TODO: continue here
+        self.embedding = embedding
+        E = embedding.embedding_dim
+        self.ff_layer = nn.Linear(2 * E, hidden_size)
+        self.activation = nn.ReLU()
+        self.layer_pred = nn.Linear(hidden_size, 1)
+        self.sigmoid = nn.Sigmoid()
 
     # DO NOT CHANGE THE SECTION BELOW! ###########################
     # # This is to force you to initialize certain things in __init__
@@ -418,14 +424,46 @@ class ShallowNeuralNetwork(nn.Module):
         act = self.get_activation()
 
         # TODO: continue here
+        premise = premise.long()
+        hypothesis = hypothesis.long()
+
+        embed_prem = emb(premise)          # (N, L_p, E)
+        embed_hyp  = emb(hypothesis)       # (N, L_h, E)
+
+        prem_vec = max_pool(embed_prem)    # (N, E)
+        hyp_vec  = max_pool(embed_hyp)     # (N, E)
+
+        concat = torch.cat([prem_vec, hyp_vec], dim=1)  # (N, 2E)
+
+        h = ff_layer(concat)             # (N, H)
+        h = act(h)                       # (N, H)
+
+        logits = layer_pred(h)           # (N, 1)
+        probs = sigmoid(logits)          # (N, 1)
+        return probs.squeeze(-1)         # (N,)
 
 
-### 3.2
+### 3.2so in 
 class DeepNeuralNetwork(nn.Module):
     def __init__(self, embedding: nn.Embedding, hidden_size: int, num_layers: int = 2):
         super().__init__()
 
         # TODO: continue here
+        self.embedding = embedding
+        E = embedding.embedding_dim
+
+        layers = []
+        in_dim = 2 * E
+        for _ in range(num_layers):
+            layers.append(nn.Linear(in_dim, hidden_size))
+            in_dim = hidden_size
+        self.ff_layers = nn.ModuleList(layers)
+
+        self.activation = nn.ReLU()
+        out_in_dim = in_dim  
+        self.layer_pred = nn.Linear(out_in_dim, 1)
+        self.sigmoid = nn.Sigmoid()
+
 
     # DO NOT CHANGE THE SECTION BELOW! ###########################
     # # This is to force you to initialize certain things in __init__
@@ -454,6 +492,23 @@ class DeepNeuralNetwork(nn.Module):
         act = self.get_activation()
 
         # TODO: continue here
+        premise = premise.long()
+        hypothesis = hypothesis.long()
+
+        embed_prem = emb(premise)          # (N, L_p, E)
+        embed_hyp  = emb(hypothesis)       # (N, L_h, E)
+
+        prem_vec = max_pool(embed_prem)    # (N, E)
+        hyp_vec  = max_pool(embed_hyp)     # (N, E)
+
+        x = torch.cat([prem_vec, hyp_vec], dim=1)  # (N, 2E)
+
+        for layer in ff_layers:
+            x = act(layer(x))            # (N, hidden_size) each step
+
+        logits = layer_pred(x)           # (N, 1)
+        probs = sigmoid(logits)          # (N, 1)
+        return probs.squeeze(-1)         # (N,)
 
 
 if __name__ == "__main__":
