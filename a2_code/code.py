@@ -615,19 +615,68 @@ def compute_gender_subspace(
     n_components: int = 1,
 ) -> np.array:
     # TODO: your work here
-    pass
+
+    normalized_embeddings = []
+    
+    # Process each pair of gender attribute words
+    for word1, word2 in gender_attribute_words:
+        emb1 = word_to_embedding[word1]
+        emb2 = word_to_embedding[word2]
+        
+        mean = (emb1 + emb2) / 2
+        
+        norm_emb1 = emb1 - mean
+        norm_emb2 = emb2 - mean
+        
+        normalized_embeddings.append(norm_emb1)
+        normalized_embeddings.append(norm_emb2)
+    
+    normalized_embeddings = np.array(normalized_embeddings)
+    
+    # Run PCA to find the principal components
+    pca = PCA(n_components=n_components)
+    pca.fit(normalized_embeddings)
+    
+    return pca.components_
 
 
 def project(a: np.array, b: np.array) -> "tuple[float, np.array]":
     # TODO: your work here
-    pass
+
+    dot_ab = np.dot(a, b)
+    
+    dot_bb = np.dot(b, b)
+    
+    # Compute scaling coefficient 
+    s = dot_ab / dot_bb
+    
+    # Compute vector projection
+    vector_projection = s * b
+    
+    return s, vector_projection
+
 
 
 def compute_profession_embeddings(
     word_to_embedding: "dict[str, np.array]", professions: "list[str]"
 ) -> "dict[str, np.array]":
     # TODO: your work here
-    pass
+
+    profession_to_embedding = {}
+    
+    for profession in professions:
+        words = profession.split()
+        
+        embeddings = []
+        for word in words:
+            if word in word_to_embedding:
+                embeddings.append(word_to_embedding[word])
+        
+        if len(embeddings) > 0:
+            avg_embedding = np.mean(embeddings, axis=0)
+            profession_to_embedding[profession] = avg_embedding
+    
+    return profession_to_embedding
 
 
 def compute_extreme_words(
@@ -638,12 +687,40 @@ def compute_extreme_words(
     max_: bool = True,
 ) -> "list[str]":
     # TODO: your work here
-    pass
+
+    # First principal component 
+    gender_direction = gender_subspace[0]
+    
+    # Scalar coefficients for each word
+    word_coefficients = []
+    for word in words:
+        if word in word_to_embedding:
+            embedding = word_to_embedding[word]
+            scalar, _ = project(embedding, gender_direction)
+            word_coefficients.append((word, scalar))
+    
+    # Sort by scalar coefficient
+    word_coefficients.sort(key=lambda x: x[1], reverse=max_)
+    
+    extreme_words = [word for word, _ in word_coefficients[:k]]
+    
+    return extreme_words
 
 
 def cosine_similarity(a: np.array, b: np.array) -> float:
     # TODO: your work here
-    pass
+
+    dot_product = np.dot(a, b)
+    
+    # Compute L2 norms
+    norm_a = np.linalg.norm(a)
+    norm_b = np.linalg.norm(b)
+    
+    # Compute cosine similarity
+    cosine_similarity = dot_product / (norm_a * norm_b)
+    
+    return float(cosine_similarity)
+
 
 
 def compute_direct_bias(
@@ -653,14 +730,54 @@ def compute_direct_bias(
     c: float = 0.25,
 ):
     # TODO: your work here
-    pass
+
+    gender_direction = gender_subspace[0]
+    
+    # Collect cosine similarities for all words
+    cosine_similarities = []
+    for word in words:
+        if word in word_to_embedding:
+            embedding = word_to_embedding[word]
+            cos_sim = cosine_similarity(embedding, gender_direction)            
+            abs_cos_sim = np.abs(cos_sim) ** c
+            
+            cosine_similarities.append(abs_cos_sim)
+    
+    direct_bias = np.mean(cosine_similarities)
+    
+    return float(direct_bias)
 
 
 def weat_association(
     w: str, A: "list[str]", B: "list[str]", word_to_embedding: "dict[str, np.array]"
 ) -> float:
     # TODO: your work here
-    pass
+
+    if w not in word_to_embedding:
+        return 0.0
+    
+    w_embedding = word_to_embedding[w]
+    
+    # Compute mean cosine similarity with attribute set A
+    similarities_A = []
+    for word_a in A:
+        if word_a in word_to_embedding:
+            sim = cosine_similarity(w_embedding, word_to_embedding[word_a])
+            similarities_A.append(sim)
+    
+    mean_sim_A = np.mean(similarities_A) if similarities_A else 0.0
+    
+    # Compute mean cosine similarity with attribute set B
+    similarities_B = []
+    for word_b in B:
+        if word_b in word_to_embedding:
+            sim = cosine_similarity(w_embedding, word_to_embedding[word_b])
+            similarities_B.append(sim)
+    
+    mean_sim_B = np.mean(similarities_B) if similarities_B else 0.0
+    
+    # Return the difference between the two means
+    return float(mean_sim_A - mean_sim_B)
 
 
 def weat_differential_association(
@@ -672,14 +789,42 @@ def weat_differential_association(
     weat_association_func: Callable,
 ) -> float:
     # TODO: your work here
-    pass
+
+     # Compute sum of associations for target set X
+    sum_X = 0.0
+    for x in X:
+        sum_X += weat_association_func(x, A, B, word_to_embedding)
+    
+    # Compute sum of associations for target set Y
+    sum_Y = 0.0
+    for y in Y:
+        sum_Y += weat_association_func(y, A, B, word_to_embedding)
+    
+    # WEAT test statistic
+    differential_association = sum_X - sum_Y
+    
+    return float(differential_association)
 
 
 def debias_word_embedding(
     word: str, word_to_embedding: "dict[str, np.array]", gender_subspace: np.array
 ) -> np.array:
     # TODO: your work here
-    pass
+    
+    if word not in word_to_embedding:
+        return None
+    
+    word_embedding = word_to_embedding[word]
+    
+    # Main gender direction
+    gender_direction = gender_subspace[0]
+    
+    _, projection = project(word_embedding, gender_direction)
+    
+    # Subtract the projection from the embedding
+    debiased_embedding = word_embedding - projection
+    
+    return debiased_embedding
 
 
 def hard_debias(
@@ -688,7 +833,24 @@ def hard_debias(
     n_components: int = 1,
 ) -> "dict[str, np.array]":
     # TODO: your work here
-    pass
+    
+    # Compute the gender subspace
+    gender_subspace = compute_gender_subspace(
+        word_to_embedding, gender_attribute_words, n_components
+    )
+    
+    # Debias all word embeddings
+    debiased_word_to_embedding = {}
+    
+    for word in word_to_embedding:
+        debiased_embedding = debias_word_embedding(
+            word, word_to_embedding, gender_subspace
+        )
+        
+        if debiased_embedding is not None:
+            debiased_word_to_embedding[word] = debiased_embedding
+    
+    return debiased_word_to_embedding
 
 
 if __name__ == "__main__":
