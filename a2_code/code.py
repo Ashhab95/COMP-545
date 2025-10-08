@@ -1,3 +1,4 @@
+
 import csv
 import json
 import itertools
@@ -339,23 +340,74 @@ def p_value_permutation_test(
 
 
 def build_current_surrounding_pairs(indices: "list[int]", window_size: int = 2):
-    # TODO: your work here
-    pass
-
+    surrounding_indices = []
+    current_indices = []
+    
+    
+    for i in range(window_size, len(indices) - window_size):
+        current_word = indices[i]
+        
+        surrounding = []
+        for j in range(i - window_size, i + window_size + 1):
+            if j != i:  
+                surrounding.append(indices[j])
+        
+        current_indices.append(current_word)
+        surrounding_indices.append(surrounding)
+    
+    return surrounding_indices, current_indices
 
 def expand_surrounding_words(ix_surroundings: "list[list[int]]", ix_current: "list[int]"):
-    # TODO: your work here
-    pass
+    ix_surroundings_expanded = []
+    ix_current_expanded = []
+    
+    # Iterate through each center word and its surrounding words
+    for center, surroundings in zip(ix_current, ix_surroundings):
+        # Create a pair for each surrounding word
+        for surrounding in surroundings:
+            ix_surroundings_expanded.append(surrounding)
+            ix_current_expanded.append(center)
+    
+    return ix_surroundings_expanded, ix_current_expanded
 
 
 def cbow_preprocessing(indices_list: "list[list[int]]", window_size: int = 2):
-    # TODO: your work here
-    pass
+    sources = []
+    targets = []
+    
+    for indices in indices_list:
+        # Get surrounding words and center words for this sentence
+        surrounding_indices, current_indices = build_current_surrounding_pairs(
+            indices, window_size
+        )
+        # Accumulate them
+        sources.extend(surrounding_indices)
+        targets.extend(current_indices)
+    
+    return sources, targets
 
 
 def skipgram_preprocessing(indices_list: "list[list[int]]", window_size: int = 2):
-    # TODO: your work here
-    pass
+    all_targets = []
+    all_sources = []
+    
+    for indices in indices_list:
+        # Get surrounding words and center words for this sentence
+        surrounding_indices, current_indices = build_current_surrounding_pairs(
+            indices, window_size
+        )
+        
+        # Expand into individual pairs
+        surroundings_expanded, centers_expanded = expand_surrounding_words(
+            surrounding_indices, current_indices
+        )
+        
+        # For Skip-Gram: center word is input, surrounding word is target
+        all_targets.extend(surroundings_expanded)  # Predict surrounding words
+        all_sources.extend(centers_expanded)       # From center words
+    
+    # Return in correct order: (targets, sources)
+    return all_targets, all_sources
 
 
 class SharedNNLM:
@@ -374,8 +426,8 @@ class SharedNNLM:
         """
 
         # TODO vvvvvv
-        self.embedding = "your work here"
-        self.projection = "your work here"
+        self.embedding = nn.Embedding(num_words, embed_dim)
+        self.projection = nn.Linear(embed_dim, num_words, bias=False)
 
         # TODO ^^^^^
         self.bind_weights()
@@ -420,7 +472,10 @@ class SkipGram(nn.Module):
 
     def forward(self, x: torch.Tensor):
         # TODO: your work here
-        pass
+        embeddings = self.emb(x)
+        output = self.proj(embeddings)
+    
+        return output
 
 
 class CBOW(nn.Module):
@@ -446,14 +501,37 @@ class CBOW(nn.Module):
 
     def forward(self, x: torch.Tensor):
         # TODO: your work here
-        pass
+        embeddings = self.emb(x)
+        summed_embeddings = embeddings.sum(dim=1)
+        output = self.proj(summed_embeddings)
+
+        return output
+
 
 
 def compute_topk_similar(
     word_emb: torch.Tensor, w2v_emb_weight: torch.Tensor, k
 ) -> list:
     # TODO: your work here
-    pass
+
+    if word_emb.dim() == 1:
+        word_emb = word_emb.unsqueeze(0)
+    
+    # Normalize embeddings for cosine similarity
+    word_emb_norm = F.normalize(word_emb, p=2, dim=1)
+    w2v_emb_norm = F.normalize(w2v_emb_weight, p=2, dim=1)
+    
+    # Compute cosine similarities
+    similarities =  (word_emb_norm @ w2v_emb_norm.t()).squeeze(0)
+    V = similarities.shape[0]
+
+    kk = min(k + 1, V)
+
+    top_vals, top_idx = torch.topk(similarities, kk)
+    
+    if kk == k:
+        return top_idx.tolist()
+    return top_idx[1:kk].tolist()
 
 
 @torch.no_grad()
@@ -465,7 +543,26 @@ def retrieve_similar_words(
     k: int = 5,
 ) -> "list[str]":
     # TODO: your work here
-    pass
+    model.eval()
+    if word not in index_map:
+        return []
+    
+    # Get the index of the word
+    word_idx = index_map[word]
+    
+    # Get the embedding of the word from the model
+    word_emb = model.emb.weight[word_idx]
+    
+    # Get all embeddings from the model
+    all_embeddings = model.emb.weight
+    
+    # Find top k+1 similar words (including itself)
+    topk_indices = compute_topk_similar(word_emb, all_embeddings, k)
+    
+    # Convert indices to words, filtering out the input word itself
+    similar_words = [index_to_word[idx] for idx in topk_indices]
+    
+    return similar_words
 
 
 @torch.no_grad()
@@ -479,7 +576,34 @@ def word_analogy(
     k: int = 5,
 ) -> "list[str]":
     # TODO: your work here
-    pass
+    model.eval()
+    if word_a not in index_map or word_b not in index_map or word_c not in index_map:
+        return []
+
+    idx_a = index_map[word_a]
+    idx_b = index_map[word_b]
+    idx_c = index_map[word_c]
+
+    emb_a = model.emb.weight[idx_a]
+    emb_b = model.emb.weight[idx_b]
+    emb_c = model.emb.weight[idx_c]
+
+    analogy_vec = emb_a - emb_b + emb_c
+    if analogy_vec.dim() == 1:
+        analogy_vec = analogy_vec.unsqueeze(0)  
+
+    raw_top = compute_topk_similar(analogy_vec, model.emb.weight, k + 3)
+
+    banned = {idx_a, idx_b, idx_c}
+    similar_words: list[str] = []
+    for idx in raw_top:
+        if idx in banned:
+            continue
+        similar_words.append(index_to_word[idx])
+        if len(similar_words) == k:
+            break
+
+    return similar_words
 
 
 # ######################## PART 2: YOUR WORK STARTS HERE ########################
