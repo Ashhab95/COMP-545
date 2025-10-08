@@ -575,34 +575,31 @@ def word_analogy(
     index_to_word: "dict[int, str]",
     k: int = 5,
 ) -> "list[str]":
-    # TODO: your work here
     model.eval()
     if word_a not in index_map or word_b not in index_map or word_c not in index_map:
         return []
-
+    
     idx_a = index_map[word_a]
     idx_b = index_map[word_b]
     idx_c = index_map[word_c]
-
+    
     emb_a = model.emb.weight[idx_a]
     emb_b = model.emb.weight[idx_b]
     emb_c = model.emb.weight[idx_c]
-
-    analogy_vec = emb_a - emb_b + emb_c
-    if analogy_vec.dim() == 1:
-        analogy_vec = analogy_vec.unsqueeze(0)  
-
-    raw_top = compute_topk_similar(analogy_vec, model.emb.weight, k + 3)
-
-    banned = {idx_a, idx_b, idx_c}
-    similar_words: list[str] = []
-    for idx in raw_top:
-        if idx in banned:
-            continue
+    
+    # Compute analogy vector: word_a - word_b + word_c
+    analogy_vector = emb_a - emb_b + emb_c
+    
+    all_embeddings = model.emb.weight
+    
+    topk_indices = compute_topk_similar(analogy_vector, all_embeddings, k + 3)
+    
+    similar_words = []
+    for idx in topk_indices:
         similar_words.append(index_to_word[idx])
         if len(similar_words) == k:
             break
-
+    
     return similar_words
 
 
